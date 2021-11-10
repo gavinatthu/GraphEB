@@ -1,94 +1,28 @@
-import os
 import pandas as pd
-import argparse
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
-import shutil
 import json
 import h5py
-import attr
-from pathlib import Path
-from torchbiggraph.config import parse_config
-from torchbiggraph.converters.importers import TSVEdgelistReader, convert_input_data
-from torchbiggraph.train import train
-from torchbiggraph.util import SubprocessInitializer, setup_logging
-from torchbiggraph.eval import do_eval
 from sklearn.manifold import TSNE
 
-# dir = 'C:/Users/Jiawen/OneDrive/2021-2022_1/昆明公安厅/复杂网络样本(1).xlsx'
-DATA_DIR = './PBG/data/example_3'
-MODEL_DIR = './PBG/model_3'
 
-def main(args):
-    #df = dataloader(args)
-    pbg(args)
-    plot(args)
+def dataformat(args):
+    data = pd.read_excel(args.data_in)
+    data = data.to_numpy()
 
-    return None
+    with open(args.data_format, 'w') as f:
+        for edge in data:
+            for i in range(edge[-1]):
+                f.write('\t'.join(edge[:2]) + '\n')
 
-def pbg(args):
-    GRAPH_PATH = args.data_format
-    raw_config = dict(
-        # I/O data
-        entity_path=DATA_DIR,
-        edge_paths=[
-            DATA_DIR + '/edges_partitioned',
-        ],
-        checkpoint_path=MODEL_DIR,
-        # Graph structure
-        entities={
-            "WHATEVER": {"num_partitions": 1}
-        },
-        relations=[
-            {
-                "name": "phonecall",
-                "lhs": "WHATEVER",
-                "rhs": "WHATEVER",
-                "operator": "complex_diagonal",
-            }
-        ],
-        dynamic_relations=False,
-        dimension=50,
-        global_emb=False,
-        comparator="dot",
-        num_epochs=50,
-        num_uniform_negs=1000,
-        loss_fn="softmax",
-        lr=0.01,
-        regularization_coef=1e-3,
-        eval_fraction=0.,
-    )
-
-    setup_logging()
-    config = parse_config(raw_config)
-    subprocess_init = SubprocessInitializer()
-    input_edge_paths = [Path(GRAPH_PATH)]
-
-    convert_input_data(
-        config.entities,
-        config.relations,
-        config.entity_path,
-        config.edge_paths,
-        input_edge_paths,
-        TSVEdgelistReader(lhs_col=0, rel_col=None, rhs_col=1),
-        dynamic_relations=config.dynamic_relations,
-    )
-    train(config, subprocess_init=subprocess_init)
+    return data
 
 
-    # relations = [attr.evolve(r, all_negs=True) for r in raw_config['relations']]
-    # eval_config = attr.evolve(
-    #     config, edge_paths='./data/example_3/edges_partitioned', relations=relations, num_uniform_negs=0
-    # )
-
-    # do_eval(eval_config, subprocess_init=subprocess_init)
-
-    return None
 
 
 def stat(args):
-    df = dataloader(args)
+    df = dataformat(args)
     G = nx.from_pandas_edgelist(df, '节点A', '节点B',
                         edge_attr=True, create_using=nx.DiGraph())
     #pos = nx.random_layout(G, seed=23)
@@ -134,21 +68,10 @@ def stat(args):
     print('avg_clust:', nx.average_clustering(G_ud))
     return None
 
-def dataloader(args):
-    #df = pd.DataFrame()
-    data = pd.read_excel(args.data_in)
-    data = data.to_numpy()
 
-
-    with open(args.data_format, 'w') as f:
-        for edge in data:
-            for i in range(edge[-1]):
-                f.write('\t'.join(edge[:2]) + '\n')
-
-    return data
     
 
-def plot(args):
+def plot(DATA_DIR, MODEL_DIR):
     loss, reg, violators_lhs, violators_rhs = [], [], [], []
     with open('./PBG/model_3/training_stats.json', 'r') as f:
         for line in f.readlines():
@@ -163,7 +86,7 @@ def plot(args):
     plt.legend()
     plt.title('PBG training loss') 
     plt.xlabel('Epochs')
-    plt.savefig('./result/pbg_loss.png')
+    plt.savefig(DATA_DIR + 'pbg_loss.png')
 
     plt.figure(figsize=(10,5))
     plt.subplot(1,2,1)
@@ -179,7 +102,7 @@ def plot(args):
     plt.title('PBG training records')
     plt.ylabel('violators')
     plt.xlabel('Epochs')
-    plt.savefig('./result/pbg.png')
+    plt.savefig(DATA_DIR + 'pbg.png')
 
     
     nodes_path = DATA_DIR + '/entity_names_WHATEVER_0.json'
@@ -197,21 +120,5 @@ def plot(args):
     Y = tsne.fit_transform(data_np)
     fig = plt.figure(figsize=(8, 8))
     plt.scatter(Y[:, 0], Y[:, 1], cmap=plt.cm.Spectral)
-    plt.savefig('./result/embedding.png')
+    plt.savefig(DATA_DIR + 'embedding.png')
     print(data_np.shape)
-
-
-
-
-if __name__ == "__main__":
-    
-    args = argparse.ArgumentParser(description='Decision Stump')
-    args.add_argument('--data_in', default='D:/data/KMcall/origin.xlsx', type=str,
-                    help='path to the training input .xlsx file')
-    args.add_argument('--data_format', default='D:/data/KMcall/tiny_format.tsv', type=str,
-            help='path to the training input .xlsx file')     
-    args.add_argument('--out_dir', default='D:/data/KMcall/tiny_PBG/', type=str,
-                    help='path to the result data file')
-
-    args = args.parse_args()
-    main(args)
